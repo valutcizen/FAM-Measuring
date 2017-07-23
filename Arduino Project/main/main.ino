@@ -1,26 +1,33 @@
 #include <SoftwareSerial.h>
 #include <Adafruit_MAX31865.h> // https://github.com/adafruit/Adafruit_MAX31865
 
+#define DEBUG
+
 #define BluetoothRxPin 10
 #define BluetoothTxPin 11
 #define TemperatureConventerCsPin 10
 #define TemperatureConventerDataReadyPin 9
 #define RREF 430.0
 #define RTEMP0 100.0
-#define MesQuantity 20
-#define MesPeriodMs 200
+#define MesQuantity 50
+#define MesPeriodMs 40
+#define StatisticsPeriod 200
 
 SoftwareSerial BluetoothSerial(BluetoothRxPin, BluetoothTxPin);
 Adafruit_MAX31865 TemperatureConventer(TemperatureConventerCsPin);
 float Temperatures[MesQuantity];
 int MesCounter = 0;
 bool MesGood = false;
-unsigned long timestamp = 0;
+unsigned long MesTimestamp = 0;
+unsigned long StatTimestamp = 0;
 unsigned long now = 0;
 
 void setup()
 {
+#ifdef DEBUG
   DebugSerialSetup();
+#endif
+
   BluetoothSerialSetup();
   TemperatureConventerSetup();
   MesPeriodSetup();
@@ -39,20 +46,22 @@ void loop()
   WaitUntilMesPeriod();
 }
 
-inline void FaultService(uint8_t fault)
+inline void FaultService(uint8_t& fault)
 {
+#ifdef DEBUG
   PrintDebugFault(fault);
+#endif
+
   SendBluetoothFault(fault);
   ResetMeasurements();
 }
 
-inline void MeasureService(float temp)
+inline void MeasureService(float& temp)
 {
-  PrintDebugTemp(temp);
   AddMeasure(temp);
-  
-  if (MesGood)
-    PrintBluetoothTemp();
+
+  if (MesGood && (now - StatTimestamp > StatisticsPeriod))
+    PrintBluetoothStatistics();
 }
 
 inline void WaitUntilMesPeriod()
@@ -60,8 +69,8 @@ inline void WaitUntilMesPeriod()
   do
   {
     now = millis();
-  } while (now - timestamp < MesPeriodMs);
-  timestamp = now;
+  } while (now - MesTimestamp < MesPeriodMs);
+  MesTimestamp = now;
 }
 
 inline void DebugSerialSetup()
@@ -84,10 +93,11 @@ inline void TemperatureConventerSetup()
 
 inline void MesPeriodSetup()
 {
-  timestamp = millis();
+  MesTimestamp = millis();
+  StatTimestamp = MesTimestamp;
 }
 
-inline void PrintDebugFault(uint8_t fault)
+inline void PrintDebugFault(uint8_t& fault)
 {
   Serial.print("Fault 0x"); Serial.println(fault, HEX);
   if (fault & MAX31865_FAULT_HIGHTHRESH) {
@@ -110,10 +120,15 @@ inline void PrintDebugFault(uint8_t fault)
   }
 }
 
-inline void PrintDebugTemp(float temp)
+inline void PrintBluetoothStatistics()
 {
-  Serial.print("Measured: ");
-  Serial.println(temp);
+  StatTimestamp = now;
+  float average = GetAverage();
+  float variance = GetVariance(average);
+
+#ifdef DEBUG
+  Serial.print("A: "); Serial.print(average); Serial.print(" 100V: "); Serial.println(variance*100);
+#endif
 }
 
 inline void ResetMeasurements()
@@ -122,7 +137,7 @@ inline void ResetMeasurements()
   MesGood = false;
 }
 
-inline void AddMeasure(float temp)
+inline void AddMeasure(float& temp)
 {
   Temperatures[MesCounter++] = temp;
 
@@ -133,12 +148,27 @@ inline void AddMeasure(float temp)
   }
 }
 
-inline void SendBluetoothFault(uint8_t fault)
+inline float GetAverage()
 {
-  
+  float result = 0;
+
+  for (int i = 0; i < MesQuantity; ++i)
+    result += Temperatures[i];
+
+  return result / MesQuantity;
 }
 
-inline void PrintBluetoothTemp()
+inline float GetVariance(float& average)
+{
+  float result = 0;
+
+  for (int i = 0; i < MesQuantity; ++i)
+    result += pow(Temperatures[i] - average, 2);
+
+  return result / MesQuantity;
+}
+
+inline void SendBluetoothFault(uint8_t& fault)
 {
   
 }
