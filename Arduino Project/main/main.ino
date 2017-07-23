@@ -2,11 +2,14 @@
 #include <Adafruit_MAX31865.h> // https://github.com/adafruit/Adafruit_MAX31865
 
 #define DEBUG
+//#define PROGRAM_BLUETOOTH
 
-#define BluetoothRxPin 10
-#define BluetoothTxPin 11
-#define TemperatureConventerCsPin 10
+#define BluetoothEnablePin 3
+#define BluetoothRxPin 4
+#define BluetoothTxPin 5
+#define BluetoothStatePin 6
 #define TemperatureConventerDataReadyPin 9
+#define TemperatureConventerCsPin 10
 #define RREF 430.0
 #define RTEMP0 100.0
 #define MesQuantity 50
@@ -22,6 +25,12 @@ unsigned long MesTimestamp = 0;
 unsigned long StatTimestamp = 0;
 unsigned long now = 0;
 
+struct Mes {
+  uint8_t fault = 0;
+  float average = 0;
+  float variance = 0;
+} MesResult;
+
 void setup()
 {
 #ifdef DEBUG
@@ -35,6 +44,9 @@ void setup()
 
 void loop()
 {
+#ifdef PROGRAM_BLUETOOTH
+#endif    
+
   float temp = TemperatureConventer.temperature(RTEMP0, RREF);
   uint8_t fault = TemperatureConventer.readFault();
 
@@ -81,14 +93,22 @@ inline void DebugSerialSetup()
 
 inline void BluetoothSerialSetup()
 {
-  BluetoothSerial.begin(4800);
-  Serial.println("Serial port for bluetooth initialized.");
+  pinMode(BluetoothEnablePin, OUTPUT);
+  pinMode(BluetoothTxPin, OUTPUT);
+  pinMode(BluetoothRxPin, INPUT);
+  pinMode(BluetoothStatePin, INPUT);
+#ifdef PROGRAM_BLUETOOTH
+  BluetoothSerial.begin(38400);
+#else
+  BluetoothSerial.begin(9600);
+#endif
+  BluetoothSerial.listen();
+  digitalWrite(BluetoothEnablePin, HIGH);
 }
 
 inline void TemperatureConventerSetup()
 {
   TemperatureConventer.begin(MAX31865_4WIRE);
-  Serial.println("Temperature conventer initialized.");
 }
 
 inline void MesPeriodSetup()
@@ -168,8 +188,38 @@ inline float GetVariance(float& average)
   return result / MesQuantity;
 }
 
+inline void ResendAtCommands()
+{
+  while (Serial.available())
+  {
+    char r = Serial.read();
+    Serial.write(r);
+    BluetoothSerial.write(r);
+  }
+  while (BluetoothSerial.available())
+    Serial.write(BluetoothSerial.read());
+}
+    
 inline void SendBluetoothFault(uint8_t& fault)
 {
-  
+  MesResult.fault = fault;
+  MesResult.average = 0;
+  MesResult.variance = 0;
+  BluetoothSerialWrite();
+}
+    
+inline void SendBluetoothFault(float& average, float& variance)
+{
+  MesResult.fault = 0;
+  MesResult.average = 0;
+  MesResult.variance = 0;
+  BluetoothSerialWrite();
+}
+
+inline void BluetoothSerialWrite()
+{
+  BluetoothSerial.write(MesResult.fault);
+  BluetoothSerial.write(MesResult.average);
+  BluetoothSerial.write(MesResult.variance);
 }
 
