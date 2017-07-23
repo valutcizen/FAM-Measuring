@@ -3,7 +3,7 @@
 
 #define BluetoothRxPin 10
 #define BluetoothTxPin 11
-#define TemperatureConventerCsPin 3
+#define TemperatureConventerCsPin 10
 #define TemperatureConventerDataReadyPin 9
 #define RREF 430.0
 #define RTEMP0 100.0
@@ -66,7 +66,7 @@ inline void WaitUntilMesPeriod()
 
 inline void DebugSerialSetup()
 {
-  Serial.begin(57600);
+  Serial.begin(9600);
   Serial.println("Serial port initialized.");
 }
 
